@@ -9,6 +9,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 import requests
+from requests.adapters import HTTPAdapter
 from urllib3.response import HTTPResponse
 
 from kb.client import (
@@ -119,6 +120,7 @@ class TestKickbaseClientInit:
 
     def test_retry_adapter_mounted(self):
         adapter = new_client()._session.get_adapter(BASE_URL)
+        assert isinstance(adapter, HTTPAdapter)
         assert adapter.max_retries is RETRY
 
     def test_repr_hides_password(self):
@@ -169,7 +171,9 @@ class TestRetryConfig:
 class TestLogin:
     def test_success_sets_token_header_and_user(self):
         client = new_client()
-        with patch.object(client._session, "request", return_value=login_response("abc")):
+        with patch.object(
+            client._session, "request", return_value=login_response("abc")
+        ):
             data = client.login()
 
         assert data["tkn"] == "abc"
@@ -186,7 +190,12 @@ class TestLogin:
 
         args, kwargs = mock_request.call_args
         assert args == ("POST", f"{BASE_URL}{LOGIN_PATH}")
-        assert kwargs["json"] == {"em": EMAIL, "pass": PASSWORD, "loy": False, "rep": {}}
+        assert kwargs["json"] == {
+            "em": EMAIL,
+            "pass": PASSWORD,
+            "loy": False,
+            "rep": {},
+        }
         assert kwargs["timeout"] == TIMEOUT
 
     def test_login_sends_json_content_type(self):
@@ -206,9 +215,11 @@ class TestLogin:
 
     def test_wrong_credentials(self):
         client = new_client()
-        with patch.object(client._session, "request", return_value=make_response(401)):
-            with pytest.raises(KickbaseAuthenticationError, match="wrong email") as exc:
-                client.login()
+        with (
+            patch.object(client._session, "request", return_value=make_response(401)),
+            pytest.raises(KickbaseAuthenticationError, match="wrong email") as exc,
+        ):
+            client.login()
 
         assert exc.value.endpoint == LOGIN_PATH
         assert client._token is None
@@ -217,11 +228,13 @@ class TestLogin:
     def test_server_error_keeps_status_and_html_body(self):
         client = new_client()
         html = "<html>502 Bad Gateway</html>"
-        with patch.object(
-            client._session, "request", return_value=make_response(502, text=html)
+        with (
+            patch.object(
+                client._session, "request", return_value=make_response(502, text=html)
+            ),
+            pytest.raises(KickbaseAPIError) as exc,
         ):
-            with pytest.raises(KickbaseAPIError) as exc:
-                client.login()
+            client.login()
 
         assert exc.value.status_code == 502
         assert exc.value.response_data == html
@@ -230,65 +243,83 @@ class TestLogin:
     def test_rate_limited(self):
         client = new_client()
         resp = make_response(429, {"err": "slow down"}, headers={"Retry-After": "30"})
-        with patch.object(client._session, "request", return_value=resp):
-            with pytest.raises(KickbaseRateLimitError) as exc:
-                client.login()
+        with (
+            patch.object(client._session, "request", return_value=resp),
+            pytest.raises(KickbaseRateLimitError) as exc,
+        ):
+            client.login()
 
         assert exc.value.retry_after == 30
         assert exc.value.response_data == {"err": "slow down"}
 
     def test_body_not_json(self):
         client = new_client()
-        with patch.object(
-            client._session, "request", return_value=make_response(200, text="<html>")
+        with (
+            patch.object(
+                client._session,
+                "request",
+                return_value=make_response(200, text="<html>"),
+            ),
+            pytest.raises(KickbaseDataError, match="not valid JSON") as exc,
         ):
-            with pytest.raises(KickbaseDataError, match="not valid JSON") as exc:
-                client.login()
+            client.login()
         assert exc.value.response_data == "<html>"
 
     def test_body_not_an_object(self):
         client = new_client()
-        with patch.object(
-            client._session, "request", return_value=make_response(200, ["tkn"])
+        with (
+            patch.object(
+                client._session, "request", return_value=make_response(200, ["tkn"])
+            ),
+            pytest.raises(KickbaseDataError, match="got list"),
         ):
-            with pytest.raises(KickbaseDataError, match="got list"):
-                client.login()
+            client.login()
 
     def test_missing_token(self):
         client = new_client()
-        with patch.object(
-            client._session, "request", return_value=make_response(200, {"u": {}})
+        with (
+            patch.object(
+                client._session, "request", return_value=make_response(200, {"u": {}})
+            ),
+            pytest.raises(KickbaseDataError, match="no token") as exc,
         ):
-            with pytest.raises(KickbaseDataError, match="no token") as exc:
-                client.login()
+            client.login()
         assert "'u'" in str(exc.value)
         assert client._token is None
 
     @pytest.mark.parametrize("token", ["", None, 123])
     def test_invalid_token(self, token):
         client = new_client()
-        with patch.object(
-            client._session, "request", return_value=make_response(200, {"tkn": token})
+        with (
+            patch.object(
+                client._session,
+                "request",
+                return_value=make_response(200, {"tkn": token}),
+            ),
+            pytest.raises(KickbaseDataError),
         ):
-            with pytest.raises(KickbaseDataError):
-                client.login()
+            client.login()
 
     def test_timeout(self):
         client = new_client()
         cause = requests.Timeout("too slow")
-        with patch.object(client._session, "request", side_effect=cause):
-            with pytest.raises(KickbaseRequestError, match="timed out") as exc:
-                client.login()
+        with (
+            patch.object(client._session, "request", side_effect=cause),
+            pytest.raises(KickbaseRequestError, match="timed out") as exc,
+        ):
+            client.login()
         assert exc.value.__cause__ is cause
         assert exc.value.endpoint == LOGIN_PATH
 
     def test_connection_error(self):
         client = new_client()
-        with patch.object(
-            client._session, "request", side_effect=requests.ConnectionError("down")
+        with (
+            patch.object(
+                client._session, "request", side_effect=requests.ConnectionError("down")
+            ),
+            pytest.raises(KickbaseRequestError, match="Connection error"),
         ):
-            with pytest.raises(KickbaseRequestError, match="Connection error"):
-                client.login()
+            client.login()
 
 
 # --- get -------------------------------------------------------------------
@@ -297,9 +328,11 @@ class TestLogin:
 class TestGet:
     def test_requires_login(self):
         client = new_client()
-        with patch.object(client._session, "request") as mock_request:
-            with pytest.raises(KickbaseAuthenticationError, match="Not logged in") as exc:
-                client.get("/v4/test")
+        with (
+            patch.object(client._session, "request") as mock_request,
+            pytest.raises(KickbaseAuthenticationError, match="Not logged in") as exc,
+        ):
+            client.get("/v4/test")
         mock_request.assert_not_called()
         assert exc.value.endpoint == "/v4/test"
 
@@ -318,11 +351,15 @@ class TestGet:
 
     def test_not_found(self):
         client = logged_in_client()
-        with patch.object(
-            client._session, "request", return_value=make_response(404, {"err": "nope"})
+        with (
+            patch.object(
+                client._session,
+                "request",
+                return_value=make_response(404, {"err": "nope"}),
+            ),
+            pytest.raises(KickbaseNotFoundError) as exc,
         ):
-            with pytest.raises(KickbaseNotFoundError) as exc:
-                client.get("/v4/leagues/x/overview")
+            client.get("/v4/leagues/x/overview")
 
         assert exc.value.status_code == 404
         assert exc.value.endpoint == "/v4/leagues/x/overview"
@@ -331,28 +368,34 @@ class TestGet:
     def test_rate_limited_with_retry_after(self):
         client = logged_in_client()
         resp = make_response(429, headers={"Retry-After": "45"})
-        with patch.object(client._session, "request", return_value=resp):
-            with pytest.raises(KickbaseRateLimitError) as exc:
-                client.get("/v4/test")
+        with (
+            patch.object(client._session, "request", return_value=resp),
+            pytest.raises(KickbaseRateLimitError) as exc,
+        ):
+            client.get("/v4/test")
         assert exc.value.retry_after == 45
         assert exc.value.status_code == 429
 
     def test_rate_limited_without_retry_after(self):
         client = logged_in_client()
-        with patch.object(client._session, "request", return_value=make_response(429)):
-            with pytest.raises(KickbaseRateLimitError) as exc:
-                client.get("/v4/test")
+        with (
+            patch.object(client._session, "request", return_value=make_response(429)),
+            pytest.raises(KickbaseRateLimitError) as exc,
+        ):
+            client.get("/v4/test")
         assert exc.value.retry_after is None
 
     def test_html_gateway_error_keeps_status(self):
         """Regression: a non-JSON 502 must not turn into a request error."""
         client = logged_in_client()
         html = "<html><body>502 Bad Gateway</body></html>"
-        with patch.object(
-            client._session, "request", return_value=make_response(502, text=html)
+        with (
+            patch.object(
+                client._session, "request", return_value=make_response(502, text=html)
+            ),
+            pytest.raises(KickbaseAPIError) as exc,
         ):
-            with pytest.raises(KickbaseAPIError) as exc:
-                client.get("/v4/test")
+            client.get("/v4/test")
 
         assert type(exc.value) is KickbaseAPIError
         assert exc.value.status_code == 502
@@ -361,68 +404,88 @@ class TestGet:
 
     def test_error_with_empty_body(self):
         client = logged_in_client()
-        with patch.object(client._session, "request", return_value=make_response(500)):
-            with pytest.raises(KickbaseAPIError) as exc:
-                client.get("/v4/test")
+        with (
+            patch.object(client._session, "request", return_value=make_response(500)),
+            pytest.raises(KickbaseAPIError) as exc,
+        ):
+            client.get("/v4/test")
         assert exc.value.status_code == 500
         assert exc.value.response_data is None
 
     def test_long_error_body_is_truncated(self):
         client = logged_in_client()
-        with patch.object(
-            client._session, "request", return_value=make_response(503, text="x" * 5000)
+        with (
+            patch.object(
+                client._session,
+                "request",
+                return_value=make_response(503, text="x" * 5000),
+            ),
+            pytest.raises(KickbaseAPIError) as exc,
         ):
-            with pytest.raises(KickbaseAPIError) as exc:
-                client.get("/v4/test")
-        assert len(exc.value.response_data) == MAX_ERROR_BODY_CHARS
+            client.get("/v4/test")
+        assert exc.value.response_data == "x" * MAX_ERROR_BODY_CHARS
 
     def test_success_body_not_json(self):
         client = logged_in_client()
-        with patch.object(
-            client._session, "request", return_value=make_response(200, text="oops")
+        with (
+            patch.object(
+                client._session, "request", return_value=make_response(200, text="oops")
+            ),
+            pytest.raises(KickbaseDataError, match="not valid JSON") as exc,
         ):
-            with pytest.raises(KickbaseDataError, match="not valid JSON") as exc:
-                client.get("/v4/test")
+            client.get("/v4/test")
         assert exc.value.endpoint == "/v4/test"
 
     def test_success_body_empty(self):
         client = logged_in_client()
-        with patch.object(client._session, "request", return_value=make_response(200)):
-            with pytest.raises(KickbaseDataError):
-                client.get("/v4/test")
+        with (
+            patch.object(client._session, "request", return_value=make_response(200)),
+            pytest.raises(KickbaseDataError),
+        ):
+            client.get("/v4/test")
 
     def test_success_body_not_an_object(self):
         client = logged_in_client()
-        with patch.object(
-            client._session, "request", return_value=make_response(200, [1, 2])
+        with (
+            patch.object(
+                client._session, "request", return_value=make_response(200, [1, 2])
+            ),
+            pytest.raises(KickbaseDataError, match="got list"),
         ):
-            with pytest.raises(KickbaseDataError, match="got list"):
-                client.get("/v4/test")
+            client.get("/v4/test")
 
     def test_timeout(self):
         client = logged_in_client()
         cause = requests.Timeout("slow")
-        with patch.object(client._session, "request", side_effect=cause):
-            with pytest.raises(KickbaseRequestError, match="timed out") as exc:
-                client.get("/v4/test")
+        with (
+            patch.object(client._session, "request", side_effect=cause),
+            pytest.raises(KickbaseRequestError, match="timed out") as exc,
+        ):
+            client.get("/v4/test")
         assert exc.value.__cause__ is cause
         assert exc.value.endpoint == "/v4/test"
 
     def test_connection_error(self):
         client = logged_in_client()
-        with patch.object(
-            client._session, "request", side_effect=requests.ConnectionError("down")
+        with (
+            patch.object(
+                client._session, "request", side_effect=requests.ConnectionError("down")
+            ),
+            pytest.raises(KickbaseRequestError, match="Connection error"),
         ):
-            with pytest.raises(KickbaseRequestError, match="Connection error"):
-                client.get("/v4/test")
+            client.get("/v4/test")
 
     def test_other_request_exception(self):
         client = logged_in_client()
-        with patch.object(
-            client._session, "request", side_effect=requests.TooManyRedirects("loop")
+        with (
+            patch.object(
+                client._session,
+                "request",
+                side_effect=requests.TooManyRedirects("loop"),
+            ),
+            pytest.raises(KickbaseRequestError, match="failed"),
         ):
-            with pytest.raises(KickbaseRequestError, match="failed"):
-                client.get("/v4/test")
+            client.get("/v4/test")
 
 
 # --- re-authentication -----------------------------------------------------
@@ -450,24 +513,28 @@ class TestReauthentication:
 
     def test_second_401_raises_without_looping(self):
         client = logged_in_client()
-        with patch.object(
-            client._session,
-            "request",
-            side_effect=[make_response(401), login_response(), make_response(401)],
-        ) as mock_request:
-            with pytest.raises(KickbaseAuthenticationError, match="after re-login"):
-                client.get("/v4/test")
+        with (
+            patch.object(
+                client._session,
+                "request",
+                side_effect=[make_response(401), login_response(), make_response(401)],
+            ) as mock_request,
+            pytest.raises(KickbaseAuthenticationError, match="after re-login"),
+        ):
+            client.get("/v4/test")
         assert mock_request.call_count == 3
 
     def test_failed_relogin_raises_login_error(self):
         client = logged_in_client()
-        with patch.object(
-            client._session,
-            "request",
-            side_effect=[make_response(401), make_response(401)],
-        ) as mock_request:
-            with pytest.raises(KickbaseAuthenticationError, match="wrong email"):
-                client.get("/v4/test")
+        with (
+            patch.object(
+                client._session,
+                "request",
+                side_effect=[make_response(401), make_response(401)],
+            ) as mock_request,
+            pytest.raises(KickbaseAuthenticationError, match="wrong email"),
+        ):
+            client.get("/v4/test")
         assert mock_request.call_count == 2
 
 

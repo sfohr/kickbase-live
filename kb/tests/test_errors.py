@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from email.utils import format_datetime
 
 import pytest
@@ -53,7 +53,9 @@ class TestHierarchy:
 
 class TestStatusCodes:
     def test_not_found_is_404(self):
-        error = KickbaseNotFoundError("Not found", endpoint="/x", response_data={"e": 1})
+        error = KickbaseNotFoundError(
+            "Not found", endpoint="/x", response_data={"e": 1}
+        )
         assert error.status_code == 404
         assert error.endpoint == "/x"
         assert error.response_data == {"e": 1}
@@ -81,7 +83,7 @@ class TestParseRetryAfter:
         assert parse_retry_after(value) == expected
 
     def test_http_date_in_future(self):
-        when = datetime.now(timezone.utc) + timedelta(seconds=120)
+        when = datetime.now(UTC) + timedelta(seconds=120)
         result = parse_retry_after(format_datetime(when, usegmt=True))
         assert result is not None
         assert 115 <= result <= 120

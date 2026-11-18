@@ -111,11 +111,9 @@ class KickbaseClient:
         )
 
     def __getstate__(self) -> Any:
-        raise TypeError(
-            "KickbaseClient holds credentials and must not be pickled."
-        )
+        raise TypeError("KickbaseClient holds credentials and must not be pickled.")
 
-    # --- transport ---------------------------------------------------------
+    # TRANSPORT ---
 
     def _send(self, method: str, path: str, **kwargs: Any) -> requests.Response:
         """Send a throttled request and turn network failures into KickbaseRequestError.
@@ -196,7 +194,7 @@ class KickbaseClient:
             )
         return data
 
-    # --- authentication ----------------------------------------------------
+    # AUTH ---
 
     def login(self) -> dict[str, Any]:
         """Authenticate with the Kickbase API.
@@ -234,11 +232,9 @@ class KickbaseClient:
         self.user = data.get("u")
         return data
 
-    # --- generic GET -------------------------------------------------------
+    # GET GENERIC FOR VARIOUS ENDPOINT WRAPPERS ----
 
-    def get(
-        self, path: str, params: dict[str, Any] | None = None
-    ) -> dict[str, Any]:
+    def get(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
         """Make an authenticated GET request to the Kickbase API.
 
         If the token is rejected (e.g. it expired during a long run), the
@@ -279,7 +275,7 @@ class KickbaseClient:
         self._raise_for_status(resp, path)
         return self._parse_json(resp, path)
 
-    # --- endpoint wrappers (all raise as documented on get()) --------------
+    # ENDPOINT WRAPPERS (USING SIMPLE GET DEFINED BEFORE) ----
 
     def leagues(self) -> dict[str, Any]:
         """Get the list of leagues the user is part of."""
@@ -327,9 +323,7 @@ class KickbaseClient:
         """Get a player's performance data."""
         return self.get(f"/v4/leagues/{league_id}/players/{player_id}/performance")
 
-    def team_profile(
-        self, team_id: str, competition_id: str = "1"
-    ) -> dict[str, Any]:
+    def team_profile(self, team_id: str, competition_id: str = "1") -> dict[str, Any]:
         """Get a club's full squad with values and start ratings.
 
         This is the basis for comparing a player against the team-mates

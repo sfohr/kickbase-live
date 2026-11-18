@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from typing import Any
 from unittest.mock import Mock, patch
 
 import pytest
@@ -45,7 +46,7 @@ def _make_client() -> KickbaseClient:
     return client
 
 
-def _response(status_code: int = 200, body: dict | None = None) -> Mock:
+def _response(status_code: int = 200, body: dict[str, Any] | None = None) -> Mock:
     """Fake response for the mocked session.request().
 
     status_code must be a real int, because the client compares it with
