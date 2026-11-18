@@ -2,24 +2,42 @@
 
 Renders the current matchday scores of a Kickbase league into a static HTML page.
 
-`kb/` is a small client for the unofficial Kickbase v4 API
-([community docs](https://github.com/kevinskyba/kickbase-api-doc)).
-`update_html.py` fetches the league ranking and renders
-`templates/index_template.html.jinja` to `OUTPUT_PATH`.
+- `kb/client.py` – small client for the unofficial Kickbase v4 API
+  ([community docs](https://github.com/kevinskyba/kickbase-api-doc))
+- `kb/errors.py` – exception hierarchy, all subclasses of `KickbaseError`
+- `kb/scoreboard.py` – fetches the league ranking and renders
+  `kb/templates/index.html.jinja` to `OUTPUT_PATH`
 
 ## Setup
 
 ```sh
 uv sync
 cp .env.example .env   # fill in USER, PW, LEAGUE_ID, OUTPUT_PATH
-uv run python update_html.py
+uv run kickbase
 ```
 
-Run it periodically (e.g. via cron) to keep the page up to date.
+`kickbase` reads `.env` from the current directory and exits non-zero on
+failure (1 = API error, 2 = bad config). To keep the page up to date, run it
+from cron, e.g. every 5 minutes:
+
+```cron
+*/5 * * * * cd ~/kickbase-live && uv run kickbase >> ~/logs/kickbase.log 2>&1
+```
 
 ## Development
 
 ```sh
-uv run pytest
-uv run mypy kb
+uv sync
+uv run pre-commit install   # ruff, mypy and pytest before every commit
 ```
+
+Run the checks manually:
+
+```sh
+uv run ruff check
+uv run ruff format
+uv run mypy
+uv run pytest
+```
+
+The same checks run in CI (`.github/workflows/ci.yml`).
