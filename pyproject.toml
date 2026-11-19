@@ -14,7 +14,7 @@ dependencies = [
 ]
 
 [project.scripts]
-kickbase = "kb.scoreboard:main"
+update_scoreboard = "kb.scoreboard:main"
 
 [build-system]
 requires = ["uv_build>=0.12.10,<0.13.0"]
