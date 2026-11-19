@@ -110,7 +110,8 @@ def main() -> int:
     except KickbaseError:
         log.exception("Kickbase API call failed")
         return 1
-    log.info("Wrote %d scores to %s", len(scores), config.output_path)
+    # Commented out: only mail if cronjob fails
+    # log.info("Wrote %d scores to %s", len(scores), config.output_path)
     return 0
 
 
